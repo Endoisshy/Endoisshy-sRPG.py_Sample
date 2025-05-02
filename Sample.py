@@ -92,35 +92,6 @@ async def changeguild(ctx):
     await ctx.send(embed=embed)
 
 @client.command()
-async def ua(ctx):
-    embed = discord.Embed(
-        title = 'Unstable Affliction',
-        description = 'you CAN cast that',
-        color = discord.Color.purple()
-    )
-    embed.set_footer(text='poor dogs :(')
-    embed.set_author(name=ctx.author.display_name, icon_url = ctx.author.avatar.url)
-    embed.add_field(name = '9000', value='You cast Unstable Affliction on Drews. Drews loses his fucking mind and starts EDing!', inline=True)
-
-    await ctx.send(embed=embed)
-
-@client.command()
-async def bolts(ctx, name):
-    embed = discord.Embed(
-        title = 'Chaos bolts',
-        description = 'you CAN cast that',
-        color = discord.Color.purple()
-    )
-
-    embed.set_footer(text='rip ' + name)
-    embed.set_author(name=ctx.author.display_name, icon_url = ctx.author.avatar.url)
-    embed.add_field(name = '9001', value='Yo one shot ' + name + ' with huge bolts to the face!', inline=True)
-
-    await ctx.send(embed=embed)
-
-
-
-@client.command()
 async def donation(ctx):
     embed = discord.Embed(
         title = 'Donate',
