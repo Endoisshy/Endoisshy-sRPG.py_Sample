@@ -47,7 +47,6 @@ async def keep_db_alive():
                              user=DB_USER,
                              password=DB_PASS,
                              db=DB_NAME,
-                             autocommit=True,
                              charset='utf8mb4')
                 print("[DB] Reconnected successfully.")
             except Exception as err:
