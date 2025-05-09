@@ -4,12 +4,14 @@
 ##                                 ##
 #####################################
 
-import discord
-import pymysql.cursors
+import math
+import discord # type: ignore
+import pymysql.cursors # type: ignore
 import random
 import os
-from discord.ext import commands
-from dotenv import load_dotenv
+import asyncio # type: ignore
+from discord.ext import commands # type: ignore
+from dotenv import load_dotenv # type: ignore
 from itertools import cycle, chain
 from mysqlsettings import *
 from data.race_info import races
@@ -33,25 +35,41 @@ connection = pymysql.connect(host=DB_HOST,
                             #cursorclass=pymysql.cursors.DictCursor)
 print('[+] Connected to database: ' + DB_NAME)
 
+async def keep_db_alive():
+    global connection
+    while True:
+        try:
+            connection.ping(reconnect=True)
+        except Exception as e:
+            print(f"[DB] Ping failed: {e}")
+            try:
+                connection = pymysql.connect(host=DB_HOST,
+                             user=DB_USER,
+                             password=DB_PASS,
+                             db=DB_NAME,
+                             autocommit=True,
+                             charset='utf8mb4')
+                print("[DB] Reconnected successfully.")
+            except Exception as err:
+                print(f"[DB] Reconnection failed: {err}")
+        await asyncio.sleep(300)  # 5 minutes
+
 
 ##############
 ##  EVENTS  ##
 ##############
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 client = commands.Bot(command_prefix = '!', intents=intents, case_insensitive=True)
 client.remove_command('help')
 
 @client.event
 async def on_ready():
-    await client.change_presence(status=discord.Status.online, activity=discord.Game(' '))
-    guild = discord.utils.get(client.guilds, name = GUILD)
-    guilded = client.guilds
-    print(f'[+] {client.user} has connected to:\n'
-          f'[+] {guild.name} (id: {guild.id})\n'
-          f'[+] {guilded[1].name} (id: {guilded[1].id})\n'
-          f'[+] Bot-SAWWWW is reaaaadyyyy!\n'
-          f'[+] {guilded[1].name}')
+    await client.change_presence(status=discord.Status.online, activity=discord.Game('!help | !start'))
+    print(f'[+] {client.user} has connected!\n'
+          f'[+] Bot-SAWWWW is reaaaadyyyy!\n')
+    asyncio.create_task(keep_db_alive())
 
 
 @client.event
@@ -64,11 +82,12 @@ async def on_shutdown():
 ##############
 ## COMMANDS ##
 ##############
+
 @client.command()
 async def ping(ctx):
     await ctx.send(f'Ping: {round(client.latency * 1000)}ms')
 
-@client.command(aliases=['guild'])
+@client.command(aliases=['guild'], description='!guild')
 async def changeguild(ctx):
     author = str(ctx.author.id)
     guildid = str(ctx.guild.id)
@@ -83,13 +102,14 @@ async def changeguild(ctx):
         print("Success")
     embed = discord.Embed(
         title = 'Guild Change',
-        description = 'You have successfully changed guilds.',
+        description = 'You have successfully changed guilds to ' + guildname,
         color = discord.Color.purple()
     )
     embed.set_author(name=ctx.author.display_name, icon_url = ctx.author.avatar.url)
     embed.set_footer(text = '!help')
 
     await ctx.send(embed=embed)
+
 
 @client.command()
 async def donation(ctx):
@@ -129,9 +149,13 @@ async def help(ctx):
     embed.add_field(name='To check out your core menus:', value='!stats, !inv, !gear')
     embed.add_field(name='Go out and make some coin!', value='!slay')
     embed.add_field(name='Or kill your friends!', value='!duel Endoisshy')
-    embed.add_field(name='Buy some gear!', value='!shop')
+    embed.add_field(name='Visit the shop!', value='!shop')
+    embed.add_field(name='See what\'s in stock!', value='!list helms')
+    embed.add_field(name='Buy some gear!', value='!buy helms 1')
     embed.add_field(name='Equip something from your inventory!', value='!equip 1')
     embed.add_field(name='Raid another guild!', value='!raid')
+    embed.add_field(name='Restart a new character!', value='!restart')
+    embed.add_field(name='Check your moves!', value='!moves')
     embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
     embed.set_footer(text='!help')
 
@@ -196,11 +220,21 @@ async def _class(ctx,):
 #====================#
 
 @client.command(aliases = ['race'])
-async def choose_race(ctx, *, race: str):
-    race = race.lower()
+async def choose_race(ctx, *, race: str = None):
     author = str(ctx.author.id)
     guildid = str(ctx.guild.id)
     guildname = str(ctx.guild.name)
+    if race == None:
+        embed = discord.Embed(
+                    title = 'Race',
+                    description = 'You need to provide a race following the command. Example: !race wood elf',
+                    color = discord.Color.red()
+                )
+        embed.set_author(name=ctx.author.display_name, icon_url = ctx.author.avatar.url)
+        embed.set_footer(text = '!help')
+        await ctx.send(embed=embed)
+        return
+    race = race.lower()
     if race not in races:
                 embed = discord.Embed(
                     title = 'Race',
@@ -239,7 +273,7 @@ async def choose_race(ctx, *, race: str):
 
             embed = discord.Embed(
                 title = 'Race',
-                description=f"You have chosen {race_info['name']}! To continue use !class to see the class menu.",
+                description=f"You have chosen {race_info['name']}! To continue use !classes to see the class menu.",
                 color=race_info['color']
             )
             embed.set_author(name=ctx.author.display_name, icon_url = ctx.author.avatar.url)
@@ -255,8 +289,18 @@ async def choose_race(ctx, *, race: str):
 #=================#
 
 @client.command(aliases=['class'])
-async def create_class(ctx, class_name: str):
+async def create_class(ctx, class_name: str = None):
     author = str(ctx.author.id)
+    if class_name == None:
+        embed = discord.Embed(
+            title='Class',
+            description='You need to provide a class following the command. Example: !class warrior',
+            color=discord.Color.red()
+        )
+        embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
+        embed.set_footer(text='!help')
+        await ctx.send(embed=embed)
+        return
 
     if class_name.lower() not in class_info:
         embed = discord.Embed(
@@ -283,6 +327,20 @@ async def create_class(ctx, class_name: str):
                 embed = discord.Embed(
                     title='Class',
                     description='You have already chosen a class.',
+                    color=discord.Color.red()
+                )
+                embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
+                embed.set_footer(text='!help')
+                await ctx.send(embed=embed)
+                return
+            cursor.execute("SELECT `Race` FROM `users` WHERE `id` = %s", (author,))
+            result = cursor.fetchone()
+
+            if not result:
+                print("User does not have a class or does not exist")
+                embed = discord.Embed(
+                    title='Class',
+                    description='You need to choose a race first. !race wood elf',
                     color=discord.Color.red()
                 )
                 embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
@@ -363,8 +421,8 @@ async def inventory(ctx):
             if not result:
                 print("User does not have an inventory set")
                 embed = discord.Embed(
-                    title = 'Inventory',
-                    description = 'You need to create a character first.',
+                    title = 'Halt!',
+                    description = 'You need to create a character first. If you chose a Race you still need to choose a Class.',
                     color = discord.Color.red()
                     
                 )
@@ -413,15 +471,14 @@ async def equipment(ctx):
                 print("User does not have any equipment set")
                 embed = discord.Embed(
                     title = 'Halt!',
-                    description = 'You do not have a character yet.',
+                    description = 'You need to create a character first. If you chose a Race you still need to choose a Class.',
                     color = discord.Color.red()
                 )
-
                 embed.set_author(name=ctx.author.display_name, icon_url = ctx.author.avatar.url)
                 embed.set_footer(text = '!help')
-
                 await ctx.send(embed=embed)
                 return
+            
             print('User has equipment')
 
             embed = discord.Embed(
@@ -457,15 +514,16 @@ async def character(ctx):
             sql = "SELECT * FROM `stats` WHERE `id` = %s"
             sql2 = "SELECT * FROM `users` WHERE `id` = %s"
             cursor.execute(sql, (author,))
-            result = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            print(result)
             cursor.execute(sql2, (author,))
-            result2 = cursor.fetchone()[0]
+            result2 = cursor.fetchone()
             if not result:
                 print("User does not have any stats set")
 
                 embed = discord.Embed(
                     title = 'Halt!',
-                    description = 'You do not have a character yet.',
+                    description = 'You need to create a character first. If you chose a Race you still need to choose a Class.',
                     color = discord.Color.red()
                 )
 
@@ -500,11 +558,65 @@ async def character(ctx):
         connection.commit()
 
 @client.command()
+async def moves(ctx):
+    author=str(ctx.author.id)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM `inventory` WHERE `id` = %s", (author,))
+            result = cursor.fetchone()
+            if not result:
+                print("User does not have an inventory set")
+                embed = discord.Embed(
+                    title = 'Halt!',
+                    description = 'You need to create a character first. If you chose a Race you still need to choose a Class.',
+                    color = discord.Color.red()
+                    
+                )
+                embed.set_author(name=ctx.author.display_name, icon_url = ctx.author.avatar.url)
+                embed.set_footer(text = '!help')
+                await ctx.send(embed=embed)
+                return
+
+            sql = f"SELECT * from `moves` WHERE `id` = '{author}'"
+            cursor.execute(sql)
+            result = cursor.fetchone()
+
+            em = discord.Embed(
+            title = 'Your moves:',
+            description = '1. ' + str(result[1]) + ' 2. ' + str(result[2]) + ' 3. ' + str(result[3]),
+            color = discord.Color.green()
+            )
+            em.set_author(name = ctx.author.display_name, icon_url = ctx.author.avatar.url)
+            em.add_field(name = 'IMPORTANT: ', value = 'The person who typed !accept for a duel MUST move first on every turn.', inline=True)
+            em.add_field(name = 'How to: ', value = 'To execute your move return to the channel and type its name. ex. "Cleave" or "cleave" (moves do not begin with a "!") WARNING sending any other messages during the duel will ruin your turn and deal a small amount of damage.', inline=True)
+            await ctx.send(embed=em)
+    finally:
+        connection.commit()
+
+@client.command()
 async def duel(ctx, name: discord.Member):
-    get_duel(ctx.author.id)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM `inventory` WHERE `id` = %s", (str(ctx.author.id),))
+            result = cursor.fetchone()
+            if not result:
+                print("User does not have an inventory set")
+                embed = discord.Embed(
+                    title = 'Halt!',
+                    description = 'You need to create a character first. If you chose a Race you still need to choose a Class.',
+                    color = discord.Color.red()
+                    
+                )
+                embed.set_author(name=ctx.author.display_name, icon_url = ctx.author.avatar.url)
+                embed.set_footer(text = '!help')
+                await ctx.send(embed=embed)
+                return
+    finally:
+        connection.commit()
+    get_duel(ctx.author)
     challenged = str(name)
     get_challenged(challenged)
-    author = str(ctx.author.id)
+    author = ctx.author
     get_name(author)
     embed = discord.Embed(
         title = 'Duel',
@@ -513,7 +625,7 @@ async def duel(ctx, name: discord.Member):
     )
     embed.set_footer(text='!help')
     embed.set_author(name=ctx.author.display_name, icon_url = ctx.author.avatar.url)
-    embed.add_field(name = 'Accept:', value='!accept', inline=True)
-    embed.add_field(name = 'New Player?', value = 'Use !start to create a character', inline=True)
+    embed.add_field(name = 'Accept:', value='New Player?', inline=True)
+    embed.add_field(name = '!accept', value = 'Use !start to create a character', inline=True)
 
     await ctx.send(name.mention, embed=embed)
